@@ -9,8 +9,13 @@ repository = "https://github.com/walksanatora/libsam-rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libc = "0.2.147"
+libc = { version = "0.2.147", default-features = false }
 
 [build-dependencies]
 bindgen = "0.68.1"
 cc = "1.0.83"
+
+[dev-dependencies]
+rodio = { version = "0.22.2", features = ["playback", "experimental"] }
+static_cell = "2.1.1"
+symphonia-core = "0.6.0"

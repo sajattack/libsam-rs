@@ -10,6 +10,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}/*",SRCDIR);
     let mut builder = cc::Build::new();
 
+
     builder.files(
         _LIBS.map(|lib|{
             format!("{SRCDIR}/{}",lib.replace(".o",".c"))
@@ -28,6 +29,8 @@ fn main() {
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        // no_std
+        .use_core()
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
