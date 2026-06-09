@@ -8,9 +8,17 @@
 //! If you have not heard of SAM it was used by the game FAITH: The Unholy Trinity
 //! due to having 4 values it can be really easy to use if you just randomize the values by 32-64
 
-use std::ffi::NulError;
 
-use libc::c_void;
+#![no_std]
+
+extern crate alloc;
+use core::ffi::c_char;
+//use core::ffi::c_void;
+use alloc::ffi::NulError;
+use alloc::vec::Vec;
+use alloc::vec;
+use alloc::string::String;
+
 
 pub mod sys;
 
@@ -54,15 +62,15 @@ pub fn set_speech_values(
 /// internal function to render a string into PCM audio
 /// SAFTEY: chunk must be at most 100 bytes long
 unsafe fn render_chunk(chunk: &str) -> Result<Vec<u8>,TTSError> {
-    let mut bytes: Vec<i8> = chunk.bytes().map(|b|{u8::cast_signed(b)}).collect();
+    let mut bytes: Vec<c_char> = chunk.bytes().map(|b|{b as c_char}).collect();
     bytes.push(0);
     let ptr = sys::speakText(bytes.as_mut_ptr());
     let res = ptr.read();
     if res.res != 1 {
-        libc::free(ptr as *mut c_void);
+        //libc::free(ptr as *mut c_void);
         return Err(TTSError::Code(res.res))
     }
-    let buf = std::slice::from_raw_parts(res.buf, res.buf_size as usize);
+    let buf = core::slice::from_raw_parts(res.buf, res.buf_size as usize);
     let result = buf.into_iter().map(|b| *b as u8).collect();
     Ok(result)
 }
