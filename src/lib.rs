@@ -8,30 +8,31 @@
 //! If you have not heard of SAM it was used by the game FAITH: The Unholy Trinity
 //! due to having 4 values it can be really easy to use if you just randomize the values by 32-64
 
-#![no_std]
+use std::ffi::NulError;
 
-extern crate alloc;
-
-use alloc::string::ToString;
-use alloc::vec;
-use core::option::Option;
-
-use core::ffi::c_char;
+use libc::c_void;
 
 pub mod sys;
 
+/// unsigned 8-bit mono pcm @ 22050 hz audio returned by SAM
+pub type SAMAudio = Vec<u8>;
+
 /// A enum containg all errors that TTS can return
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug,Clone,Copy)]
 pub enum TTSError {
     /// the string *you* passed contains a null, dont do that
     ContainsNull,
     /// error id from the libSAM, will mabey split this into values l8r
     Code(i32),
-    BufferTooSmall,
-    NullErr,
+    Other,
 }
 
-
+/// quick impl so i dont have to catch it and it can just be questioned
+impl From<NulError> for TTSError {
+    fn from(_value: NulError) -> Self {
+        TTSError::ContainsNull
+    }
+}
 
 /// set SAM tts values (0/None sets value to default)
 pub fn set_speech_values(
@@ -51,44 +52,51 @@ pub fn set_speech_values(
 }
 
 /// internal function to render a string into PCM audio
-/// SAFTEY: chunk must be at most 255 bytes long
-unsafe fn render_chunk(chunk: &str, buf: &mut [u8]) -> Result<(),TTSError> {
-    //let mut bytes: Vec<i8> = chunk.bytes().map(|b|{std::mem::transmute(b)}).collect();
-    //bytes.push(0);
-    let mut bytes = chunk.to_string().into_bytes();
+/// SAFTEY: chunk must be at most 100 bytes long
+unsafe fn render_chunk(chunk: &str) -> Result<Vec<u8>,TTSError> {
+    let mut bytes: Vec<i8> = chunk.bytes().map(|b|{u8::cast_signed(b)}).collect();
     bytes.push(0);
-    let cstr = core::ffi::CStr::from_bytes_with_nul(&bytes).map_err(|_e|TTSError::NullErr)?;
-    let ptr = sys::speakText(cstr.as_ptr() as *mut c_char);
+    let ptr = sys::speakText(bytes.as_mut_ptr());
     let res = ptr.read();
     if res.res != 1 {
-        drop(bytes);
+        libc::free(ptr as *mut c_void);
         return Err(TTSError::Code(res.res))
     }
-    if buf.len() < res.buf_size as usize {
-        return Err(TTSError::BufferTooSmall)
-    }
-    let resbuf = core::slice::from_raw_parts(res.buf, res.buf_size as usize);
-    let resbuf = core::mem::transmute::<&[c_char], &[u8]>(resbuf);
-    buf[..res.buf_size as usize].copy_from_slice(resbuf); 
-    Ok(())
+    let buf = std::slice::from_raw_parts(res.buf, res.buf_size as usize);
+    let result = buf.into_iter().map(|b| *b as u8).collect();
+    Ok(result)
 }
 
 /// Speaks the chosen text as a message
-pub fn speak_words(tospeak: &str, buf: &mut [u8]) -> Result<(), TTSError> {
-    if tospeak.len()<=255 {
-        unsafe {render_chunk(tospeak, buf)?}
+pub fn speak_words(tospeak: &str) -> Result<SAMAudio, TTSError> {
+    let bytes: Vec<u8> = if tospeak.len()<=100{
+        unsafe {render_chunk(tospeak)?}
     } else {
-        let words = tospeak.split(' ');
-        let mut small = vec![];
-        for word in words {
-            if small.iter().map(|x:&&str| {x.len() }).fold(0,|acc, x| acc + x)+word.len() < 254 {
-                small.push(word);
-            } else {
-                small.push("\0");
-                unsafe {render_chunk(small.join(" ").as_str(), buf)?}
-            }
-        }
-        unsafe {render_chunk(small.join(" ").as_str(), buf)?};
+            let mut words = tospeak.split(' ').peekable();
+            let mut result: Vec<u8> = vec![];
+            let mut processed_char_len = 0;
+            'outer: loop 
+            {
+                let mut small = String::new();
+                'inner: loop 
+                {
+
+                    if small.len()+words.peek().ok_or(TTSError::Other)?.len() > 100 {
+                        break 'inner;
+                    } else {
+                        small.push_str(words.next().ok_or(TTSError::Other)?);
+                        small.push_str(" ");
+                    }
+                }
+                result.append(&mut unsafe {render_chunk(small.as_str())?});
+                processed_char_len += small.len();
+                if tospeak.len() - processed_char_len <= 100
+                {
+                    break 'outer;
+                }
+            } 
+            result.append(&mut unsafe { render_chunk(&tospeak[processed_char_len..])?});
+        result
     };
-    Ok(())
+    Ok(bytes)
 }
