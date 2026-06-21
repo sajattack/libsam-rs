@@ -4,8 +4,7 @@ use std::{io::Cursor, num::NonZero};
 use libsam_rs::speak_words;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut vec = vec![0u8; 262144];
-    speak_words("Hello, world!", &mut vec).unwrap();
+    let vec = speak_words("Hello, world!").unwrap();
     let samples = rodio::conversions::SampleTypeConverter::new(vec.into_iter()).collect::<Vec<f32>>();
     let source = SamplesBuffer::new(NonZero::new(1).unwrap(), NonZero::new(22050).unwrap(), samples);
     //let source = Decoder::new(cursor).unwrap();
